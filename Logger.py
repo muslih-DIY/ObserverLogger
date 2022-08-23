@@ -1,12 +1,11 @@
-from logging import exception
 import threading
 import time
 from queue import Queue,Empty
 from datetime import datetime
 import traceback
-from typing import  List, Protocol
+from typing import  Protocol
 
-class LogHandler(Protocol):
+class LogHandlerProtocol(Protocol):
 
     def connect(self):
         ...
@@ -25,7 +24,7 @@ class FileHandler():
         self.logger = Logger_name
         self.timef = datetime.now
 
-    def connect():
+    def connect(self):
         pass
     
     def log(self,Data:list,**kwargs):
@@ -33,24 +32,21 @@ class FileHandler():
         exception = kwargs.get('exception',False)    
 
         with open(self.filename,'a+') as f:
-            f.write(f'\n{self.timef()}: {self.logger} :')
+            f.write(f'\n{self.timef()}: {self.logger} :\n')
             f.write('\n'.join([str(r) for r in Data]))
             if exception:traceback.print_exc(file=f)
 
-    def close():
+    def close(self):
         pass
 
 
 
 class ObserverLogger(threading.Thread):
     
-    _DataQ:Queue = None
-    
-    _handler:LogHandler=None
     
     def __init__(
-            self,DataQ:Queue,
-            LogHandler:LogHandler,
+            self,
+            LogHandler:LogHandlerProtocol,
             filename:str,
             Logger_name:str,
             interval_sec:int=4,
@@ -59,7 +55,7 @@ class ObserverLogger(threading.Thread):
             *args,
             **kwargs) -> None:
 
-        self._DataQ = DataQ
+        self._DataQ:Queue = Queue()
 
         self._handler = LogHandler
 
@@ -82,6 +78,8 @@ class ObserverLogger(threading.Thread):
 
     def stop(self):
         self._stop_event.set()
+        self._handler.close()
+        self.join() 
 
     def stop_event_active(self):
         return self._stop_event.is_set()
@@ -90,10 +88,13 @@ class ObserverLogger(threading.Thread):
         """
         Expecting this method is called when no data is storing to Queue
         
-        """        
-        self._data_Q.join()
-        self.stop()
-        self.join()    
+        """
+        length =  self._DataQ.qsize()
+        print(length)
+        self.batch_size = length+5
+        self.wait = .1
+        self._DataQ.join()
+        self.stop() 
 
     def save(self,data):
         self._DataQ.put_nowait(data)
@@ -108,18 +109,19 @@ class ObserverLogger(threading.Thread):
             if count == batch_size:
                 break
             try:
-                items.append(self._data_Q.get_nowait())
-                self._data_Q.task_done()
+                items.append(self._DataQ.get_nowait())
+                self._DataQ.task_done()
             except Empty:
                 break
         return items   
 
     def log(self):        
         data = self.get_data()
+        if not data:return
         try:
-            self._handler(data)
+            self._handler.log(data)
         except:
-            FileHandler.log(data,exception=True)
+            self.ErrorHandler.log(Data=data,exception=True)
         
 
 
